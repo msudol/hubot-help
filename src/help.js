@@ -57,10 +57,44 @@ const helpContents = (name, commands) => `\
 </html>\
 `
 
-const hiddenCommands = process.env.HUBOT_HELP_HIDDEN_COMMANDS != null ? process.env.HUBOT_HELP_HIDDEN_COMMANDS.split(',') : undefined
+const getHiddenCommandsRaw = process.env['HUBOT_HELP_HIDDEN_COMMANDS'];
+let getHiddenCommands = [];
+
+if (getHiddenCommandsRaw != null) {
+    getHiddenCommands = getHiddenCommandsRaw.split(',');
+}
+
+var hiddenCommandsPattern = function hiddenCommandsPattern () {
+    if (getHiddenCommands) {
+        return new RegExp(`^hubot (?:${getHiddenCommands != null ? getHiddenCommands.join('|') : undefined}) - `)
+    }
+}
+
+// routine to parse the help commands
+var getHelpCommands = function getHelpCommands (robot) {
+  let helpCommands = robot.helpCommands()
+  const robotName = robot.alias || robot.name
+
+  // filter
+  if (hiddenCommandsPattern()) {
+    helpCommands = helpCommands.filter(command => !hiddenCommandsPattern().test(command))
+  }
+
+  helpCommands = helpCommands.map((command) => {
+    if (robotName.length === 1) {
+      return command.replace(/^hubot\s*/i, robotName)
+    }
+
+    return command.replace(/^hubot/i, robotName)
+  })
+
+  return helpCommands.sort()
+}
 
 module.exports = (robot) => {
-
+  
+  robot.logger.debug(`Hiding help commands: \"${getHiddenCommandsRaw}\"...`);
+  
   const replyInPrivate = process.env.HUBOT_HELP_REPLY_IN_PRIVATE
   
   robot.respond(/help(?:\s+(.*))?$/i, (msg) => {
@@ -78,8 +112,16 @@ module.exports = (robot) => {
 
     let emit = cmds.join('\n')
     
+    // temporary if the help is too long just don't let it print
     if (emit.length >=2000) {
-        emit = "Help list too long, cannot print!";
+
+        //trim the string to the maximum length
+        var trimmedString = emit.substr(0, 1900);
+
+        //re-trim if we are in the middle of a word
+        trimmedString = trimmedString.substr(0, Math.min(trimmedString.length, trimmedString.lastIndexOf("\n")))        
+        
+        emit = trimmedString + "\n... help too long, cutting display short";
     }
     
     if (replyInPrivate && (robot.adapterName === 'slack' || robot.adapterName === 'discord' || robot.adapterName === 'discobot') && msg.message && msg.message.user && msg.message.user.id) {
@@ -113,38 +155,6 @@ module.exports = (robot) => {
       res.setHeader('content-type', 'text/html')
       res.end(helpContents(robot.name, emit))
     })
-  }
-  
-}
-
-// routine to parse the help commands
-var getHelpCommands = function getHelpCommands (robot) {
-  
-  let helpCommands = robot.helpCommands()
-
-  const robotName = robot.alias || robot.name
-
-  // filter
-  if (hiddenCommandsPattern()) {
-    helpCommands = helpCommands.filter(command => !hiddenCommandsPattern().test(command))
-  }
-
-  helpCommands = helpCommands.map((command) => {
-    if (robotName.length === 1) {
-      return command.replace(/^hubot\s*/i, robotName)
-    }
-
-    return command.replace(/^hubot/i, robotName)
-  })
-
-  return helpCommands.sort()
-}
-
-// routine to get the hidden commands
-var hiddenCommandsPattern = function hiddenCommandsPattern () {
-     
-  if (hiddenCommands) {
-    return new RegExp(`^hubot (?:${hiddenCommands != null ? hiddenCommands.join('|') : undefined}) - `)
   }
   
 }
