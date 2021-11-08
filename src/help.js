@@ -57,8 +57,14 @@ const helpContents = (name, commands) => `\
 </html>\
 `
 
+const hiddenCommands = process.env.HUBOT_HELP_HIDDEN_COMMANDS != null ? process.env.HUBOT_HELP_HIDDEN_COMMANDS.split(',') : undefined
+
 module.exports = (robot) => {
+
+  const replyInPrivate = process.env.HUBOT_HELP_REPLY_IN_PRIVATE
+  
   robot.respond(/help(?:\s+(.*))?$/i, (msg) => {
+    
     let cmds = getHelpCommands(robot)
     const filter = msg.match[1]
 
@@ -70,18 +76,30 @@ module.exports = (robot) => {
       }
     }
 
-    const emit = cmds.join('\n')
-
-    if (process.env.HUBOT_HELP_REPLY_IN_PRIVATE && msg.message && msg.message.user && msg.message.user.name && msg.message.user.name !== msg.message.room) {
-      msg.reply('I just replied to you in private.')
-      return msg.sendPrivate(emit)
-    } else {
+    let emit = cmds.join('\n')
+    
+    if (emit.length >=2000) {
+        emit = "Help list too long, cannot print!";
+    }
+    
+    if (replyInPrivate && (robot.adapterName === 'slack' || robot.adapterName === 'discord' || robot.adapterName === 'discobot') && msg.message && msg.message.user && msg.message.user.id) {
+      msg.reply('replied to you in private!')
+      return robot.send({ room: msg.message.user.id }, emit)
+    } 
+    else if (replyInPrivate && msg.message && msg.message.user && msg.message.user.name) {
+      msg.reply('replied to you in private!')
+      return robot.send({ room: msg.message.user.name }, emit)
+    } 
+    else {
       return msg.send(emit)
     }
   })
 
+  // display the help on the bot webpage
   if (process.env.HUBOT_HELP_DISABLE_HTTP == null) {
+      
     return robot.router.get(`/${robot.name}/help`, (req, res) => {
+        
       let cmds = getHelpCommands(robot).map(cmd => cmd.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'))
 
       if (req.query.q != null) {
@@ -96,13 +114,17 @@ module.exports = (robot) => {
       res.end(helpContents(robot.name, emit))
     })
   }
+  
 }
 
+// routine to parse the help commands
 var getHelpCommands = function getHelpCommands (robot) {
+  
   let helpCommands = robot.helpCommands()
 
   const robotName = robot.alias || robot.name
 
+  // filter
   if (hiddenCommandsPattern()) {
     helpCommands = helpCommands.filter(command => !hiddenCommandsPattern().test(command))
   }
@@ -118,9 +140,11 @@ var getHelpCommands = function getHelpCommands (robot) {
   return helpCommands.sort()
 }
 
+// routine to get the hidden commands
 var hiddenCommandsPattern = function hiddenCommandsPattern () {
-  const hiddenCommands = process.env.HUBOT_HELP_HIDDEN_COMMANDS != null ? process.env.HUBOT_HELP_HIDDEN_COMMANDS.split(',') : undefined
+     
   if (hiddenCommands) {
     return new RegExp(`^hubot (?:${hiddenCommands != null ? hiddenCommands.join('|') : undefined}) - `)
   }
+  
 }
